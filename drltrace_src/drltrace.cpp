@@ -39,6 +39,7 @@
  */
 #include <fstream>
 #include <vector>
+#include <inttypes.h>
 #include "drltrace.h"
 #include "drltrace_utils.h"
 
@@ -91,6 +92,7 @@ static unsigned int cached_function_call_free_index = 0;
 static unsigned int cache_size = 0;
 static unsigned int max_cache_size = 0;
 static unsigned int cache_dump_triggered = 0;
+
 
 /* Outputs and clears as many entries with return values from the cache as possible
  * (which may be zero).  If 'clear_all' is set, then all entries are outputted &
