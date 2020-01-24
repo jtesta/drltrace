@@ -40,6 +40,13 @@
 #include <string.h>
 #include <vector>
 
+
+/* Temporary workaround for VC2013, which doesn't have snprintf().
+ * apparently, this was added in later releases... */
+#ifdef WINDOWS
+#define snprintf _snprintf
+#endif
+
 typedef enum {
 	DRSYS_PARAM_IN = 0x01,  /**< Input parameter. */
 	DRSYS_PARAM_OUT = 0x02,  /**< Output parameter. */
@@ -184,6 +191,22 @@ typedef struct _drltrace_arg_t {
 	uint64 value64;
 } drltrace_arg_t;
 
+/* The size of one array of cached_function_call elements. */
+/* Note: this must be less than 2^31, since a signed counter iterates over it */
+#define CACHED_FUNCTION_CALLS_ARRAY_SIZE (1024 * 16)
+
+/* The number of cached_function_call arrays (each of size
+ * CACHED_FUNCTION_CALLS_ARRAY_SIZE). */
+/* Note: this must be less than 2^31, since a signed counter iterates over it */
+#define CACHED_FUNCTION_CALLS_NUM_ARRAYS 16
+
+struct _cached_function_call {
+  char *function_call; /* Contains the module name, function name, and arguments. */
+  unsigned int function_call_len;  /* Length of the function_call string. */
+  unsigned int retval_set;   /* Set to 1 when retval is set, otherwise 0. */
+  void *retval;              /* The return value of the function. */
+};
+typedef struct _cached_function_call cached_function_call;
 
 void parse_config(void);
 std::vector<drltrace_arg_t *> *libcalls_search(const char *name);

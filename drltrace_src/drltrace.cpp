@@ -634,27 +634,12 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
             return;
         }
     }
-    /* XXX: it may be better to heap-allocate the "module!func" string and
-     * pass in, to avoid this lookup.
-     */
-    mod = dr_lookup_module(func);
-    if (mod != NULL)
-        modname = dr_module_preferred_name(mod);
 
     /* Build the module & function string, then compare to the white/black
      * list. */
-    char module_name[256];
-    memset(module_name, 0, sizeof(module_name));
-
-    /* Temporary workaround for VC2013, which doesn't have snprintf().
-     * apparently, this was added in later releases... */
-#ifdef WINDOWS
-#define snprintf _snprintf
-#endif
-    unsigned int module_name_len = (unsigned int)snprintf(module_name, \
-        sizeof(module_name) - 1, "%s%s%s", modname == NULL ? "" : modname, \
-        modname == NULL ? "" : "!", name);
-
+    char module_and_function_name[256];
+    size_t module_and_function_name_len = get_module_and_function_name(module_and_function_name, sizeof(module_and_function_name), function_name, wrapcxt);
+ 
     /* Check if this module & function is in the whitelist. */
     bool allowed = false;
     bool tested = false;  /* True only if any white/blacklist testing below is done. */
@@ -705,34 +690,43 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     if (tested && !allowed)
       return;
 
-    tid = dr_get_thread_id(drcontext);
-    if (tid != INVALID_THREAD_ID)
-        dr_fprintf(outf, "~~%d~~ ", tid);
-    else
-        dr_fprintf(outf, "~~Dr.L~~ ");
-    dr_fprintf(outf, module_name);
+    char log_buffer[1024];
+    log_buffer[ sizeof(log_buffer) - 1 ] = '\0'; /* Ensure it remains null-terminated. */
 
-    /* XXX: We employ two schemes of arguments printing.  We are looking for prototypes
-     * in config file specified by user to get symbolic representation of arguments
-     * for known library calls. For the rest of library calls.  If there is no info
-     * we employ type-blindprinting and use -num_unknown_args to get a count of arguments
-	 * to print.
-     */
-    print_symbolic_args(name, wrapcxt, func);
+    get_function_name_and_args(log_buffer, sizeof(log_buffer), module_and_function_name, drcontext, wrapcxt, function_name, func);
 
-    if (op_print_ret_addr.get_value()) {
-        ret_addr = drwrap_get_retaddr(wrapcxt);
-        res = drmodtrack_lookup(drcontext, ret_addr, &mod_id, &mod_start);
-        if (res == DRCOVLIB_SUCCESS) {
-            dr_fprintf(outf,
-                       op_print_ret_addr.get_value() ?
-                       " and return to module id:%d, offset:" PIFX : "",
-                       mod_id, ret_addr - mod_start);
-        }
+    if (true) { // -print_return_values
+      //dr_fprintf(outf, "CACHING: [%s]\n", log_buffer);
+      cached_function_call_append(module_and_function_name, module_and_function_name_len log_buffer, strlen(log_buffer));
+    } else {
+      dr_fprintf(outf, "%s", log_buffer);
+      dr_fprintf(outf, "\n");
     }
-    dr_fprintf(outf, "\n");
-    if (mod != NULL)
-        dr_free_module_data(mod);
+}
+
+/****************************************************************************
+ * Library exit wrapping
+ */
+
+static void
+lib_exit(void *wrapcxt, void *user_data)
+{
+  char *function_name = (char *)user_data;  // TODO: convert back to const char
+
+  char module_and_function_name[256];
+
+  unsigned int thread_id_tag_len = get_thread_id_tag(module_and_function_name, sizeof(moule_and_function_name), drwrap_get_drcontext(wrapcxt));
+
+  /*size_t module_and_function_name_len =*/ get_module_and_function_name(module_and_function_name + thread_id_tag_len, sizeof(module_and_function_name) - thread_id_tag_len, function_name, wrapcxt);
+
+  //char log_buffer[1024];
+  //log_buffer[ sizeof(log_buffer) - 1 ] = '\0'; /* Ensure it remains null-terminated. */
+
+  //get_function_name_and_args(log_buffer, sizeof(log_buffer), module_and_function_name, drwrap_get_drcontext(wrapcxt), wrapcxt, function_name, drwrap_get_func(wrapcxt));
+
+  cached_function_call_set_return_value(module_and_function_name, strlen(module_and_function_name), drwrap_get_retval(wrapcxt));
+
+  //  dr_fprintf(outf, "Ret value of %s is 0x%"PRIx64"\n", module_name, drwrap_get_retval(wrapcxt));
 }
 
 static void
@@ -764,13 +758,13 @@ iterate_exports(const module_data_t *info, bool add)
         if (func != NULL) {
             if (add) {
                 IF_DEBUG(bool ok =)
-                    drwrap_wrap_ex(func, lib_entry, NULL, (void *) sym->name, 0);
+                    drwrap_wrap_ex(func, lib_entry, lib_exit, (void *) sym->name, 0);
                 ASSERT(ok, "wrap request failed");
                 VNOTIFY(2, "wrapping export %s!%s @" PFX NL,
                        dr_module_preferred_name(info), sym->name, func);
             } else {
                 IF_DEBUG(bool ok =)
-                    drwrap_unwrap(func, lib_entry, NULL);
+                    drwrap_unwrap(func, lib_entry, lib_exit);
                 ASSERT(ok, "unwrap request failed");
             }
         }
@@ -1024,6 +1018,12 @@ event_exit(void)
     if (op_use_config.get_value())
         libcalls_hashtable_delete();
 
+    /* Flush any remaining entries in the return value cache. */
+    if (cache_size > 0) {
+      dr_fprintf(STDERR, "Writing remaining %u entries in return value cache.\n", cache_size);
+      cached_function_call_output_cache(1);
+    }
+    
     if (outf != STDERR) {
         if (op_print_ret_addr.get_value())
             drmodtrack_dump(outf);
@@ -1032,6 +1032,8 @@ event_exit(void)
 
     free_wblist_array(&filter_function_whitelist, filter_function_whitelist_len);
     free_wblist_array(&filter_function_blacklist, filter_function_blacklist_len);
+
+    free_cached_function_calls();
 
     drx_exit();
     drwrap_exit();
@@ -1095,4 +1097,5 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 
     open_log_file();
     parse_filter_file();
+    init_cached_function_calls();
 }
