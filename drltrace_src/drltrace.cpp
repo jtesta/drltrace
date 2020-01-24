@@ -348,71 +348,88 @@ free_cached_function_calls() {
  */
 
 static void
-print_simple_value(drltrace_arg_t *arg, bool leading_zeroes)
+get_simple_value(char *out, size_t out_size, drltrace_arg_t *arg, bool leading_zeroes)
 {
     bool pointer = !TEST(DRSYS_PARAM_INLINED, arg->mode);
-    dr_fprintf(outf, pointer ? PFX : (leading_zeroes ? PFX : PIFX), arg->value);
+    char temp[256];
+    snprintf(temp, sizeof(temp) - 1, pointer ? PFX : (leading_zeroes ? PFX : PIFX), arg->value);
+    strncat(out, temp, out_size - 1);
     if (pointer && ((arg->pre && TEST(DRSYS_PARAM_IN, arg->mode)) ||
                     (!arg->pre && TEST(DRSYS_PARAM_OUT, arg->mode)))) {
         ptr_uint_t deref = 0;
         ASSERT(arg->size <= sizeof(deref), "too-big simple type");
         /* We assume little-endian */
-        if (dr_safe_read((void *)arg->value, arg->size, &deref, NULL))
-            dr_fprintf(outf, (leading_zeroes ? " => " PFX : " => " PIFX), deref);
+        if (dr_safe_read((void *)arg->value, arg->size, &deref, NULL)) {
+	  
+	  snprintf(temp, sizeof(temp) - 1, (leading_zeroes ? " => " PFX : " => " PIFX), deref);
+	  strncat(out, temp, out_size - 1);
+	}
     }
 }
 
 static void
-print_string(void *drcontext, void *pointer_str, bool is_wide)
+get_string(char *out, size_t out_size, void *drcontext, void *pointer_str, bool is_wide)
 {
     if (pointer_str == NULL)
-        dr_fprintf(outf, "<null>");
+        strncat(out, "<null>", out_size - 1);
     else {
         DR_TRY_EXCEPT(drcontext, {
-            dr_fprintf(outf, is_wide ? "%S" : "%s", pointer_str);
+	    char temp[256];
+	    if (is_wide)
+	      snprintf(temp, sizeof(temp) - 1, "\"%S\"", (wchar_t *)pointer_str);
+	    else
+	      snprintf(temp, sizeof(temp) - 1, "\"%s\"", (char *)pointer_str);
+
+	    strncat(out, temp, out_size - 1);
         }, {
-            dr_fprintf(outf, "<invalid memory>");
+            strncat(out, "<invalid memory>", out_size - 1);
         });
     }
 }
 
 static void
-print_arg(void *drcontext, drltrace_arg_t *arg)
+get_arg(char *out, size_t out_size, void *drcontext, drltrace_arg_t *arg)
 {
     if (arg->pre && (TEST(DRSYS_PARAM_OUT, arg->mode) && !TEST(DRSYS_PARAM_IN, arg->mode)))
         return;
-    dr_fprintf(outf, "%s%d: ", (op_grepable.get_value() ? " {" : "\n    arg "), arg->ordinal);
+
+    char temp[384];
+    snprintf(temp, sizeof(temp) - 1, "%s%d: ", (op_grepable.get_value() ? " {" : "\n    arg "), arg->ordinal);
+    strncat(out, temp, out_size - 1);
+
     switch (arg->type) {
-    case DRSYS_TYPE_VOID:         print_simple_value(arg, true); break;
-    case DRSYS_TYPE_POINTER:      print_simple_value(arg, true); break;
-    case DRSYS_TYPE_BOOL:         print_simple_value(arg, false); break;
-    case DRSYS_TYPE_INT:          print_simple_value(arg, false); break;
-    case DRSYS_TYPE_SIGNED_INT:   print_simple_value(arg, false); break;
-    case DRSYS_TYPE_UNSIGNED_INT: print_simple_value(arg, false); break;
-    case DRSYS_TYPE_HANDLE:       print_simple_value(arg, false); break;
-    case DRSYS_TYPE_NTSTATUS:     print_simple_value(arg, false); break;
-    case DRSYS_TYPE_ATOM:         print_simple_value(arg, false); break;
+    case DRSYS_TYPE_VOID:         get_simple_value(out, out_size, arg, true); break;
+    case DRSYS_TYPE_POINTER:      get_simple_value(out, out_size, arg, true); break;
+    case DRSYS_TYPE_BOOL:         get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_INT:          get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_SIGNED_INT:   get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_UNSIGNED_INT: get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_HANDLE:       get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_NTSTATUS:     get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_ATOM:         get_simple_value(out, out_size, arg, false); break;
 #ifdef WINDOWS
-    case DRSYS_TYPE_LCID:         print_simple_value(arg, false); break;
-    case DRSYS_TYPE_LPARAM:       print_simple_value(arg, false); break;
-    case DRSYS_TYPE_SIZE_T:       print_simple_value(arg, false); break;
-    case DRSYS_TYPE_HMODULE:      print_simple_value(arg, false); break;
+    case DRSYS_TYPE_LCID:         get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_LPARAM:       get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_SIZE_T:       get_simple_value(out, out_size, arg, false); break;
+    case DRSYS_TYPE_HMODULE:      get_simple_value(out, out_size, arg, false); break;
 #endif
     case DRSYS_TYPE_CSTRING:
-        print_string(drcontext, (void *)arg->value, false);
+        get_string(out, out_size, drcontext, (void *)arg->value, false);
         break;
     case DRSYS_TYPE_CWSTRING:
-        print_string(drcontext, (void *)arg->value, true);
+        get_string(out, out_size, drcontext, (void *)arg->value, true);
         break;
     default: {
         if (arg->value == 0)
-            dr_fprintf(outf, "<null>");
-        else
-            dr_fprintf(outf, PFX, arg->value);
+	  strncat(out, "<null>", out_size - 1);
+        else {
+	  snprintf(temp, sizeof(temp), PFX, arg->value);
+	  strncat(out, temp, out_size - 1);
+	}
     }
     }
 
-    dr_fprintf(outf, " (%s%s%stype=%s%s, size=" PIFX ")",
+    snprintf(temp, sizeof(temp) - 1, " (%s%s%stype=%s%s, size=" PIFX ")",
               (arg->arg_name == NULL) ? "" : "name=",
               (arg->arg_name == NULL) ? "" : arg->arg_name,
               (arg->arg_name == NULL) ? "" : ", ",
@@ -420,13 +437,14 @@ print_arg(void *drcontext, drltrace_arg_t *arg)
               (arg->type_name == NULL ||
               TESTANY(DRSYS_PARAM_INLINED|DRSYS_PARAM_RETVAL, arg->mode)) ? "" : "*",
               arg->size);
+    strncat(out, temp, out_size - 1);
 
     if (op_grepable.get_value())
-        dr_fprintf(outf, "}");
+      strncat(out, "}", out_size - 1);
 }
 
 static bool
-drlib_iter_arg_cb(drltrace_arg_t *arg, void *wrapcxt)
+drlib_iter_arg_cb(char *out, size_t out_size, drltrace_arg_t *arg, void *wrapcxt)
 {
     if (arg->ordinal == -1)
         return true;
@@ -435,12 +453,12 @@ drlib_iter_arg_cb(drltrace_arg_t *arg, void *wrapcxt)
 
     arg->value = (ptr_uint_t)drwrap_get_arg(wrapcxt, arg->ordinal);
 
-    print_arg(drwrap_get_drcontext(wrapcxt), arg);
+    get_arg(out, out_size, drwrap_get_drcontext(wrapcxt), arg);
     return true; /* keep going */
 }
 
 static void
-print_args_unknown_call(app_pc func, void *wrapcxt)
+get_args_unknown_call(char *out, size_t out_size, app_pc func, void *wrapcxt)
 {
     uint i;
     void *drcontext = drwrap_get_drcontext(wrapcxt);
@@ -452,35 +470,37 @@ print_args_unknown_call(app_pc func, void *wrapcxt)
     }
     DR_TRY_EXCEPT(drcontext, {
         for (i = 0; i < op_unknown_args.get_value(); i++) {
-            dr_fprintf(outf, "%s%d: " PFX, prefix, i,
-                       drwrap_get_arg(wrapcxt, i));
-            if (*suffix != '\0')
-                dr_fprintf(outf, suffix);
+	  char temp[256];
+	  snprintf(temp, sizeof(temp) - 1, "%s%d: " PFX, prefix, i, (long unsigned int)drwrap_get_arg(wrapcxt, i));
+	  strncat(out, temp, out_size - 1);
+	  if (*suffix != '\0')
+	    strncat(out, suffix, out_size - 1);
         }
     }, {
-        dr_fprintf(outf, "<invalid memory>");
+        strncat(out, "<invalid memory>", out_size - 1);
         /* Just keep going */
     });
     /* all args have been sucessfully printed */
-    dr_fprintf(outf, op_print_ret_addr.get_value() ? "\n   ": "");
+    if (op_print_ret_addr.get_value())
+      strncat(out, "\n   ", out_size - 1);
 }
 
 static bool
-print_libcall_args(std::vector<drltrace_arg_t*> *args_vec, void *wrapcxt)
+get_libcall_args(char *out, size_t out_size, std::vector<drltrace_arg_t*> *args_vec, void *wrapcxt)
 {
     if (args_vec == NULL || args_vec->size() <= 0)
         return false;
 
     std::vector<drltrace_arg_t*>::iterator it;
     for (it = args_vec->begin(); it != args_vec->end(); ++it) {
-        if (!drlib_iter_arg_cb(*it, wrapcxt))
+        if (!drlib_iter_arg_cb(out, out_size, *it, wrapcxt))
             break;
     }
     return true;
 }
 
 static void
-print_symbolic_args(const char *name, void *wrapcxt, app_pc func)
+get_symbolic_args(char *out, size_t out_size, const char *name, void *wrapcxt, app_pc func)
 {
     std::vector<drltrace_arg_t *> *args_vec;
 
@@ -490,14 +510,91 @@ print_symbolic_args(const char *name, void *wrapcxt, app_pc func)
 	if (op_use_config.get_value()) {
 		/* looking for libcall in libcalls hashtable */
 		args_vec = libcalls_search(name);
-		if (print_libcall_args(args_vec, wrapcxt)) {
-			dr_fprintf(outf, op_print_ret_addr.get_value() ? "\n   " : "");
-			return; /* we found libcall and sucessfully printed all arguments */
+		if (get_libcall_args(out, out_size, args_vec, wrapcxt)) {
+		  if (op_print_ret_addr.get_value()) {
+		    strncat(out, "\n   ", out_size - 1);
+		  }
+		  return; /* we found libcall and sucessfully printed all arguments */
 		}
 	}
     /* use standard type-blind scheme */
     if (op_unknown_args.get_value() > 0)
-        print_args_unknown_call(func, wrapcxt);
+        get_args_unknown_call(out, out_size, func, wrapcxt);
+}
+
+inline int
+get_module_and_function_name(char *module_and_function_name, \
+                             size_t module_and_function_name_len, \
+                             const char *function_name, \
+                             void *wrapcxt) {
+  int ret;
+  const char *modname = NULL;
+  /* XXX: it may be better to heap-allocate the "module!func" string and
+   * pass in, to avoid this lookup.
+   */
+  module_data_t *mod = dr_lookup_module(drwrap_get_func(wrapcxt));
+  if (mod != NULL)
+    modname = dr_module_preferred_name(mod);
+  if (modname == NULL)
+    modname = "";
+
+  ret = snprintf(module_and_function_name, \
+      module_and_function_name_len - 1, "%s%s%s", \
+      modname == NULL ? "" : modname, modname == NULL ? "" : "!", function_name);
+
+  if (mod != NULL)
+    dr_free_module_data(mod);
+
+  return ret;
+}
+
+/* Places the thread ID tag into the buffer, then returns its length. */
+inline unsigned int
+get_thread_id_tag(char *out, size_t out_size, void *drcontext) {
+  thread_id_t tid;
+  tid = dr_get_thread_id(drcontext);
+  if (tid != INVALID_THREAD_ID)
+    return (unsigned int)snprintf(out, out_size - 1, "~~%d~~ ", tid);
+  else {
+    strncat(out, "~~Dr.L~~ ", out_size - 1);
+    return 9;
+  }
+}
+
+inline void
+get_function_name_and_args(char *out, size_t out_size, char *module_and_function_name, \
+                           void *drcontext, void *wrapcxt, const char *function_name, \
+                           app_pc func) {
+  uint mod_id;
+  app_pc mod_start, ret_addr;
+  drcovlib_status_t res;
+
+
+  unsigned int thread_id_tag_len = get_thread_id_tag(out, out_size, drcontext);
+  strncat(out, module_and_function_name, out_size - 1);
+
+  /* XXX: We employ two schemes of arguments printing.  We are looking for prototypes
+   * in config file specified by user to get symbolic representation of arguments
+   * for known library calls. For the rest of library calls.  If there is no info
+   * we employ type-blindprinting and use -num_unknown_args to get a count of arguments
+   * to print.
+   */
+
+  get_symbolic_args(out, out_size, function_name, wrapcxt, func);
+
+  if (op_print_ret_addr.get_value()) {
+    ret_addr = drwrap_get_retaddr(wrapcxt);
+    res = drmodtrack_lookup(drcontext, ret_addr, &mod_id, &mod_start);
+    if (res == DRCOVLIB_SUCCESS) {
+      char temp[128];
+      snprintf(temp, sizeof(temp) - 1,
+          op_print_ret_addr.get_value() ?
+          " and return to module id:%d, offset:" PIFX : "",
+          mod_id, ret_addr - mod_start);
+
+      strncat(out, temp, out_size - 1);
+    }
+  }
 }
 
 /****************************************************************************
@@ -507,15 +604,9 @@ print_symbolic_args(const char *name, void *wrapcxt, app_pc func)
 static void
 lib_entry(void *wrapcxt, INOUT void **user_data)
 {
-    const char *name = (const char *) *user_data;
+    const char *function_name = (const char *) *user_data;
     const char *modname = NULL;
     app_pc func = drwrap_get_func(wrapcxt);
-    module_data_t *mod;
-    thread_id_t tid;
-    uint mod_id;
-    app_pc mod_start, ret_addr;
-    drcovlib_status_t res;
-
     void *drcontext = drwrap_get_drcontext(wrapcxt);
 
     if (op_only_from_app.get_value()) {
@@ -527,7 +618,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
             retaddr = NULL;
         });
         if (retaddr != NULL) {
-            mod = dr_lookup_module(retaddr);
+            module_data_t *mod = dr_lookup_module(retaddr);
             if (mod != NULL) {
                 bool from_exe = (mod->start == exe_start);
                 dr_free_module_data(mod);
