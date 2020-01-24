@@ -697,7 +697,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 
     if (true) { // -print_return_values
       //dr_fprintf(outf, "CACHING: [%s]\n", log_buffer);
-      cached_function_call_append(module_and_function_name, module_and_function_name_len log_buffer, strlen(log_buffer));
+      cached_function_call_append(module_and_function_name, module_and_function_name_len, log_buffer, strlen(log_buffer));
     } else {
       dr_fprintf(outf, "%s", log_buffer);
       dr_fprintf(outf, "\n");
@@ -715,7 +715,7 @@ lib_exit(void *wrapcxt, void *user_data)
 
   char module_and_function_name[256];
 
-  unsigned int thread_id_tag_len = get_thread_id_tag(module_and_function_name, sizeof(moule_and_function_name), drwrap_get_drcontext(wrapcxt));
+  unsigned int thread_id_tag_len = get_thread_id_tag(module_and_function_name, sizeof(module_and_function_name), drwrap_get_drcontext(wrapcxt));
 
   /*size_t module_and_function_name_len =*/ get_module_and_function_name(module_and_function_name + thread_id_tag_len, sizeof(module_and_function_name) - thread_id_tag_len, function_name, wrapcxt);
 
