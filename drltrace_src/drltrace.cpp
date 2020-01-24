@@ -648,14 +648,14 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 
       /* If the whitelist entry contains a wildcard, then compare only the shortest
        * part of either string. */
-      unsigned int module_name_len_compare;
+      unsigned int len_compare;
       if (filter_function_whitelist[i].is_wildcard)
-        module_name_len_compare = MIN(module_name_len, \
+        len_compare = MIN(module_and_function_name_len, \
           filter_function_whitelist[i].func_name_len);
       else
-        module_name_len_compare = module_name_len;
+        len_compare = module_and_function_name_len;
 
-      if (fast_strcmp(module_name, module_name_len_compare, \
+      if (fast_strcmp(module_name, len_compare, \
           filter_function_whitelist[i].func_name, \
           filter_function_whitelist[i].func_name_len) == 0) {
         allowed = true;
