@@ -1,7 +1,24 @@
 #ifndef _DRLTRACE_RETVAL_CACHE_H
 #define _DRLTRACE_RETVAL_CACHE_H
 
-#ifndef UNIT_TESTS
+#ifdef UNIT_TESTS
+  #include <stdio.h>
+  #define file_t FILE*
+
+  #define MIN(x,y) (((x) > (y)) ? (y) : (x))
+
+  inline int fast_strcmp(const char *s1, size_t s1_len, const char *s2, size_t s2_len) {
+  if (s1_len != s2_len)
+    return -1;
+
+  #ifdef WINDOWS
+    return memcmp(s1, s2, s1_len); /* VC2013 doesn't have bcmp(), sadly. */
+  #else
+    return bcmp(s1, s2, s1_len);  /* Fastest option. */
+  #endif
+  }
+
+#else
   #include "dr_api.h"
 #endif
 
@@ -18,37 +35,28 @@ void
 retval_cache_output(unsigned int clear_all);
 
 void
-retval_cache_append(char *module_and_function_name, size_t module_and_function_name_len, char *function_call, size_t function_call_len);
+retval_cache_append(const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len);
 
 void
-retval_cache_set_return_value(char *function_call, size_t function_call_len, void *retval);
+retval_cache_set_return_value(const char *function_call, size_t function_call_len, void *retval);
 
-#ifdef UNIT_TESTS
-void
-retval_cache_init(FILE *_out_stream, unsigned int _max_cache_size, bool grepable_output);
-#else
 void
 retval_cache_init(file_t _out_stream, unsigned int _max_cache_size, bool grepable_output);
-#endif
 
 void
 retval_cache_free();
 
 
+/* Functions only used during unit testing of the retval cache system. */
 #ifdef UNIT_TESTS
-
 unsigned int
 is_cache_empty();
+
 unsigned int
 get_cache_size();
-unsigned int
-get_start_index();
-unsigned int
-get_last_used_array();
+
 unsigned int
 get_free_index();
-void
-set_max_cache_size();
 #endif
 
 #endif /* _DRLTRACE_RETVAL_CACHE_H */

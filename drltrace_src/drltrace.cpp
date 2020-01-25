@@ -428,12 +428,12 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 
     get_function_name_and_args(log_buffer, sizeof(log_buffer), module_and_function_name, drcontext, wrapcxt, function_name, func);
 
-    if (true) { // -print_return_values
-      //dr_fprintf(outf, "CACHING: [%s]\n", log_buffer);
-      retval_cache_append(module_and_function_name, module_and_function_name_len, log_buffer, strlen(log_buffer));
-    } else {
+    if (op_no_retval.get_value()) {
       dr_fprintf(outf, "%s", log_buffer);
       dr_fprintf(outf, "\n");
+    } else {
+      //dr_fprintf(outf, "CACHING: [%s]\n", log_buffer);
+      retval_cache_append(module_and_function_name, module_and_function_name_len, log_buffer, strlen(log_buffer));
     }
 }
 
@@ -491,13 +491,13 @@ iterate_exports(const module_data_t *info, bool add)
         if (func != NULL) {
             if (add) {
                 IF_DEBUG(bool ok =)
-                    drwrap_wrap_ex(func, lib_entry, lib_exit, (void *) sym->name, 0);
+                    drwrap_wrap_ex(func, lib_entry, op_no_retval.get_value() ? NULL : lib_exit, (void *) sym->name, 0);
                 ASSERT(ok, "wrap request failed");
                 VNOTIFY(2, "wrapping export %s!%s @" PFX NL,
                        dr_module_preferred_name(info), sym->name, func);
             } else {
                 IF_DEBUG(bool ok =)
-                    drwrap_unwrap(func, lib_entry, lib_exit);
+                    drwrap_unwrap(func, lib_entry, op_no_retval.get_value() ? NULL : lib_exit);
                 ASSERT(ok, "unwrap request failed");
             }
         }
@@ -752,7 +752,8 @@ event_exit(void)
         libcalls_hashtable_delete();
 
     /* Flush any remaining entries in the return value cache. */
-    retval_cache_output(1);
+    if (!op_no_retval.get_value())
+      retval_cache_output(1);
     
     if (outf != STDERR) {
         if (op_print_ret_addr.get_value())
@@ -763,7 +764,8 @@ event_exit(void)
     free_wblist_array(&filter_function_whitelist, filter_function_whitelist_len);
     free_wblist_array(&filter_function_blacklist, filter_function_blacklist_len);
 
-    retval_cache_free();
+    if (!op_no_retval.get_value())
+      retval_cache_free();
 
     drx_exit();
     drwrap_exit();
@@ -827,5 +829,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
 
     open_log_file();
     parse_filter_file();
-    retval_cache_init(outf, 0, op_grepable.get_value());
+
+    if (!op_no_retval.get_value())
+      retval_cache_init(outf, op_retval_max_cache.get_value(), op_grepable.get_value());
 }

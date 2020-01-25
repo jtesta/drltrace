@@ -6,46 +6,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include "drltrace_retval_cache.h"
-#include "drltrace_utils.h"
+
+// TODO: find out about thread-safety!
 
 
-#ifdef UNIT_TESTS /* For unit testing the return value caching code. */
-
-  #define CACHED_FUNCTION_CALLS_ARRAY_SIZE 8
-  #define CACHED_FUNCTION_CALLS_NUM_ARRAYS 4
-
+#ifdef UNIT_TESTS
+  #define RETVAL_CACHE_SIZE 8
   #define dr_fprintf fprintf
-  #define STDERR stderr
-
-  FILE *out_stream;
 #else
+  #include "drltrace_utils.h"
 
-  /* The size of one array of cached_function_call elements. */
-  /* Note: this must be less than 2^31, since a signed counter iterates over it */
-  #define CACHED_FUNCTION_CALLS_ARRAY_SIZE (1024 * 16)
+  /* There are 128K entries in the cache.  Each entry is 16 bytes, so the cache takes
+   * up 2MB memory at minimum (not counting the function strings stored). */
+  #define RETVAL_CACHE_SIZE (128 * 1024)
 
-  /* The number of cached_function_call arrays (each of size
-   * CACHED_FUNCTION_CALLS_ARRAY_SIZE). */
-  /* Note: this must be less than 2^31, since a signed counter iterates over it */
-  #define CACHED_FUNCTION_CALLS_NUM_ARRAYS 16
-
-  file_t out_stream;
 #endif
+
+file_t out_stream;
 
 bool grepable_output = false;
 
-static cached_function_call **retval_cache_arrays = NULL;
+static cached_function_call *retval_cache = NULL;
 
-/* Points to the first index in array 0 that is valid (previous entries are no longer
- * valid, as they have left the cache).  This is where searching begins when a return
- * value is received. */
-static unsigned int start_index = 0;
-
-/* The index of the last used array in retval_cache_arrays. */
-static unsigned int last_used_array = 0;
-
-/* Points to the first free index in the last used array (i.e.: the slot to put new
- * cache entries). */
 static unsigned int free_index = 0;
 
 // TODO: document this.
@@ -64,79 +46,33 @@ retval_cache_output(unsigned int clear_all) {
    * calls don't print error messages when the entry can't be found. */
   if (clear_all)
     cache_dump_triggered = 1;
+  else if (!retval_cache[0].retval_set)
+    return;
 
-  while(true) {
-    cached_function_call *cfc_array = retval_cache_arrays[0];
-    while (start_index < CACHED_FUNCTION_CALLS_ARRAY_SIZE) {
-      //for (; start_index < CACHED_FUNCTION_CALLS_ARRAY_SIZE; \
-      //  start_index++) {
+  for (int i = 0; (i < free_index) && (i < RETVAL_CACHE_SIZE); i++) {
 
-      /* Print the function and return value. */
-      unsigned int retval_set = cfc_array[start_index].retval_set;
-      if (retval_set || clear_all) {
-	//dr_fprintf(outf, "DONE: ");
-	dr_fprintf(out_stream, "%s", cfc_array[start_index].function_call);
-	void *retval = cfc_array[start_index].retval;
-	if (true) { // -grepable
-	  if (retval_set)
-	    dr_fprintf(out_stream, " = 0x%"PRIx64"\n", retval);
-	  else
-	    dr_fprintf(out_stream, " = ?\n");
-	} else {
-	  if (retval_set)
-	    dr_fprintf(out_stream, "\n    ret: 0x%"PRIx64, retval);
-	  else
-	    dr_fprintf(out_stream, "\n    ret: ?");
-	}
+    /* Print the function and return value. */
+    dr_fprintf(out_stream, "%s", retval_cache[i].function_call);
+    unsigned int retval_set = retval_cache[i].retval_set;
+    void *retval = retval_cache[i].retval;
 
-	free(cfc_array[start_index].function_call);
-	cache_size--;
-	start_index++;
-	//dr_fprintf(outf, "  Incremented start_index to: %u\n", start_index);
-
-      /* We found the first entry that doesn't have a set return value.  So we're
-       * done. */
-      } else
-	goto done;
-
-      //dr_fprintf(outf, "  last_used_array: %u; start_index: %u; free_index: %u; ARRAY_SIZE: %u\n", last_used_array, start_index, free_index, CACHED_FUNCTION_CALLS_ARRAY_SIZE);
-      /* If we reached the end of the cache... */
-      if ((last_used_array == 0) &&		\
-	  ((start_index == free_index) ||
-	   (start_index == CACHED_FUNCTION_CALLS_ARRAY_SIZE))) {
-	//dr_fprintf(outf, "\nCACHE IS EMPTY\n\n");
-	/* Since the cache is now empty, set the start index to zero so new entries
-	 * are added from there. */
-	start_index = 0;
-	free_index = 0;
-	goto done;
-      }
+    if (grepable_output) {
+      if (retval_set)
+	dr_fprintf(out_stream, " = 0x%"PRIx64"\n", retval);
+      else
+	dr_fprintf(out_stream, " = ?\n");
+    } else {
+      if (retval_set)
+	dr_fprintf(out_stream, "\n    ret: 0x%"PRIx64, retval);
+      else
+	dr_fprintf(out_stream, "\n    ret: ?");
     }
 
-    /* Reset the start index, since we will be looking at the next array. */
-    //dr_fprintf(outf, "\nBONK\n\n");
-    start_index = 0;
-
-    /* Since we looked through the entire first array, we now need to shift all
-     * arrays down one index.  Then we rotate array zero to the end. */
-    cached_function_call *cfc_finished = retval_cache_arrays[0];
-    for (unsigned int i = 1; i < CACHED_FUNCTION_CALLS_NUM_ARRAYS; i++)
-      retval_cache_arrays[i - 1] = retval_cache_arrays[i];
-
-    retval_cache_arrays[CACHED_FUNCTION_CALLS_NUM_ARRAYS - 1] = cfc_finished;
-
-    /* The logic above should have caught this case, but if it somehow doesn't... */
-    if (last_used_array == 0) {
-      dr_fprintf(out_stream, "ERROR: fallback case encountered.  start_index: %lu; free index: %lu; CACHED_FUNCTION_CALLS_ARRAY_SIZE: %lu\n", start_index, free_index, CACHED_FUNCTION_CALLS_ARRAY_SIZE);
-      goto done;
-    }
-
-    /* Since we shifted all the arrays down by one, above, the last used array
-     * index needs to be decremented as well. */
-    last_used_array--;
+    free(retval_cache[i].function_call);
+    cache_size--;
   }
 
- done:
+  free_index = 0;
   return;
 }
 
@@ -161,7 +97,7 @@ retval_cache_append(const char *module_and_function_name, size_t module_and_func
     //dr_fprintf(outf, "\nNot caching [%s].\n\n", function_call);
     dr_fprintf(out_stream, "%s", function_call);
 
-    if (true) // -grepable
+    if (grepable_output)
       dr_fprintf(out_stream, " = ??\n");
     else
       dr_fprintf(out_stream, "\n    ret: ??\n");
@@ -169,145 +105,74 @@ retval_cache_append(const char *module_and_function_name, size_t module_and_func
     return;
   }
 
-  cached_function_call *arr = retval_cache_arrays[ last_used_array ];
-
-  arr[free_index].function_call = strdup(function_call);
-  arr[free_index].function_call_len = function_call_len;
-  arr[free_index].retval_set = 0;
+  retval_cache[free_index].function_call = strdup(function_call);
+  retval_cache[free_index].function_call_len = function_call_len;
+  retval_cache[free_index].retval_set = 0;
   cache_size++;
   free_index++;
 
-  if (free_index == CACHED_FUNCTION_CALLS_ARRAY_SIZE) {
-    free_index = 0;
-    last_used_array++;
-    if (last_used_array >= CACHED_FUNCTION_CALLS_NUM_ARRAYS) {
-      //dr_fprintf(outf, "Well, this is awkward... we somehow ran out of free cache entries (%lu)!  The only solution is to tell the developer and ask them to raise the limit.  Sorry.\n", CACHED_FUNCTION_CALLS_NUM_ARRAYS * CACHED_FUNCTION_CALLS_ARRAY_SIZE);
-      //exit(-1);
-
-      /* We went past the last index of arrays, so back up by one; we won't be adding
-       * more to the cache before clearing it below. */
-      last_used_array--;
-
-      // TODO: print the first cache entry, since this is responsible for the hold-up.
-      dr_fprintf(STDERR, "WARNING: return value cache exhausted!  Dumping all " \
-                 "entries into the log file as-is.  Please report this message to " \
-                 "the developer: %u %u %u\n", cache_size, \
-                 CACHED_FUNCTION_CALLS_NUM_ARRAYS, CACHED_FUNCTION_CALLS_ARRAY_SIZE);
-      retval_cache_output(1);
-    }
-  }
+  if (free_index == RETVAL_CACHE_SIZE)
+    retval_cache_output(1);
 }
 
-// TODO: rename "function_call" to "module_name_and_function"
 void
-retval_cache_set_return_value(char *function_call, size_t function_call_len, void *retval) {
-
-  //dr_fprintf(outf, "\n\nSetting return value for [[%s]] to 0x%"PRIx64":\n", function_call, retval);
-
+retval_cache_set_return_value(const char *module_name_and_function, size_t module_name_and_function_len, void *retval) {
+  unsigned int found_entry = 0;
   unsigned int min_len;
-  int j = free_index - 1;
-  //dr_fprintf(outf, "\n");
-  for (int i = last_used_array; i >= 0; i--) {
-    cached_function_call *cfc_array = retval_cache_arrays[i];
-    //dr_fprintf(outf, "i: %u\n", i);
-    for (; j >= 0; j--) {
-      //dr_fprintf(outf, "  j: %u\n", j);
+  int i = free_index - 1;
 
-      if (cfc_array[j].retval_set) {
-	//dr_fprintf(outf, "  X retval already set.\n");
-	continue;
-      }
-      
-      /* Only compare the shortest prefix of the two strings. */
-      min_len = MIN(function_call_len, cfc_array[j].function_call_len);
+  for (; (i >= 0) && (found_entry == 0); i--) {
+    if (retval_cache[i].retval_set)
+      continue;
 
-      //dr_fprintf(outf, "  fast_strcmp(\"%s\", %u, \"%s\", %u)\n", function_call, min_len, cfc_array[j].function_call, min_len);
+    /* Only compare the shortest prefix of the two strings. */
+    min_len = MIN(module_name_and_function_len, retval_cache[i].function_call_len);
+    if (fast_strcmp(module_name_and_function, min_len, \
+          retval_cache[i].function_call, min_len) == 0) {
 
-      if (fast_strcmp(function_call, min_len, \
-          cfc_array[j].function_call, min_len) == 0) {
-	//dr_fprintf(outf, "  --> HIT\n\n");
-	cfc_array[j].retval = retval;
-	cfc_array[j].retval_set = 1;
-	goto success;
-      } else {
-	//dr_fprintf(outf, "  --> MISS\n");
-      }
-
-      /* If we reached the end (or rather... the beginning...) of the cache... */
-      if ((i == 0) && ((j == 0) || (j == start_index)))
-	goto failed;
+      retval_cache[i].retval = retval;
+      retval_cache[i].retval_set = 1;
+      found_entry = 1;
     }
-    j = CACHED_FUNCTION_CALLS_ARRAY_SIZE - 1;
   }
 
-  /* Should never be reached... */
-  dr_fprintf(out_stream, "Uh-oh.  This line shouldn't have been reached!\n");
-  goto failed;
-
- success:
-  /* Check if we just stored the return value of the oldest entry in the cache.  If
-   * so, then print out its log along with all sequential logs that have return
-   * values set.  Stop when either a function with no return value is found, or the
-   * end of the cache is reached. */
-  //dr_fprintf(outf, "  j: %u; start_index: %u\n\n", j, start_index);
-  if (j == start_index)
+  if (found_entry && (i < 0)) {
+    /* If we just stored the return value of the first entry, then we can print out
+     * return values. */
     retval_cache_output(0);
+  } else if (!found_entry)
+    dr_fprintf(out_stream, "ERROR: failed to find cache entry for %s (return value: 0x%" PRIx64 ")\n", module_name_and_function, retval);
 
-  return;
-
- failed:
-  dr_fprintf(out_stream, "ERROR: failed to find cache entry for %s (return value: 0x%" PRIx64 ")\n", function_call, retval);
   return;
 }
 
-#ifdef UNIT_TESTS
 void
-retval_cache_init(FILE *_out_stream, unsigned int _max_cache_size, bool _grepable_output) {
-#else
-void
-retval_cache_init(file_t _out_stream, unsigned int _max_cache_size, bool _grepable_output) {
-#endif
+retval_cache_init(file_t _out_stream, unsigned int _max_cache_size, \
+                  bool _grepable_output) {
+
   out_stream = _out_stream;
   max_cache_size = _max_cache_size;
   grepable_output = _grepable_output;
-  
-  if (true) { // -print_return_values
-    retval_cache_arrays = (cached_function_call **)calloc( \
-        CACHED_FUNCTION_CALLS_NUM_ARRAYS, sizeof(cached_function_call *));
-    if (retval_cache_arrays == NULL) {
-      fprintf(stderr, "Failed to create retval_cache_arrays array.\n");
-      exit(-1);
-    }
 
-    for (unsigned int i = 0; i < CACHED_FUNCTION_CALLS_NUM_ARRAYS; i++) {
-      retval_cache_arrays[i] = (cached_function_call *)calloc( \
-          CACHED_FUNCTION_CALLS_ARRAY_SIZE, sizeof(cached_function_call));
-      if (retval_cache_arrays[i] == NULL) {
-	fprintf(stderr, "Failed to create retval_cache_arrays array.\n");
-	exit(-1);
-      }
-    }
+  retval_cache = (cached_function_call *)calloc(RETVAL_CACHE_SIZE, \
+      sizeof(cached_function_call));
+  if (retval_cache == NULL) {
+    fprintf(stderr, "Failed to create retval_cache array.\n");
+    exit(-1);
   }
-
 }
 
-
-/* TODO: free all entries in here too! */
 void
 retval_cache_free() {
-  if (retval_cache_arrays == NULL)
+  if (retval_cache == NULL)
     return;
 
   if (cache_size != 0) {
     fprintf(stderr, "WARNING: freeing return value cache even though it is not " \
         "empty!: %u\n", cache_size);
   }
-  
-  for (unsigned int i = 0; i < CACHED_FUNCTION_CALLS_NUM_ARRAYS; i++) {
-    free(retval_cache_arrays[i]);  retval_cache_arrays[i] = NULL;
-  }
 
-  free(retval_cache_arrays);  retval_cache_arrays = NULL;
+  free(retval_cache);  retval_cache = NULL;
 }
 
 
@@ -315,8 +180,7 @@ retval_cache_free() {
 
 unsigned int
 is_cache_empty() {
-  if ((cache_size == 0) && (start_index == 0) && \
-      (last_used_array == 0) && (free_index == 0))
+  if ((cache_size == 0) && (free_index == 0))
     return 1;
   else
     return 0;
@@ -328,22 +192,8 @@ get_cache_size() {
 }
 
 unsigned int
-get_start_index() {
-  return start_index;
-}
-
-unsigned int
-get_last_used_array() {
-  return last_used_array;
-}
-
-unsigned int
 get_free_index() {
   return free_index;
 }
 
-void
-set_max_cache_size(unsigned int _max_cache_size) {
-  max_cache_size = _max_cache_size;
-}
 #endif

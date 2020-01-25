@@ -386,16 +386,16 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/filter.config ${PROJECT_BINARY_DIR}/$
 ##################################################
 # return value cache unit tests
 
-if (DEBUG)
-  add_definitions(-DUNIT_TESTS)
+#if (DEBUG)
+#  add_definitions(-DUNIT_TESTS)
 
-  set(retval_unit_tests_srcs
-      retval_cache_unit_tests.cpp
-      drltrace_retval_cache.cpp)
+#  set(retval_unit_tests_srcs
+#      retval_cache_unit_tests.cpp
+#      drltrace_retval_cache.cpp)
 
-  add_executable(retval_cache_unit_tests ${retval_unit_tests_srcs})
-  remove_definitions(-DUNIT_TESTS)
-endif()
+#  add_executable(retval_cache_unit_tests ${retval_unit_tests_srcs})
+#  remove_definitions(-DUNIT_TESTS)
+#endif()
 
 ##################################################
 # drltrace tests
