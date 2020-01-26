@@ -341,6 +341,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     const char *modname = NULL;
     app_pc func = drwrap_get_func(wrapcxt);
     void *drcontext = drwrap_get_drcontext(wrapcxt);
+    thread_id_t tid = dr_get_thread_id(drcontext);
 
     if (op_only_from_app.get_value()) {
         /* For just this option, the modxfer approach might be better */
@@ -433,7 +434,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
       dr_fprintf(outf, "\n");
     } else {
       //dr_fprintf(outf, "CACHING: [%s]\n", log_buffer);
-      retval_cache_append(module_and_function_name, module_and_function_name_len, log_buffer, strlen(log_buffer));
+      retval_cache_append((unsigned int)tid, module_and_function_name, module_and_function_name_len, log_buffer, strlen(log_buffer));
     }
 }
 
@@ -445,7 +446,8 @@ static void
 lib_exit(void *wrapcxt, void *user_data)
 {
   char *function_name = (char *)user_data;  // TODO: convert back to const char
-
+  thread_id_t tid = dr_get_thread_id(drwrap_get_drcontext(wrapcxt));
+ 
   char module_and_function_name[256];
 
   unsigned int thread_id_tag_len = get_thread_id_tag(module_and_function_name, sizeof(module_and_function_name), drwrap_get_drcontext(wrapcxt));
@@ -457,7 +459,7 @@ lib_exit(void *wrapcxt, void *user_data)
 
   //get_function_name_and_args(log_buffer, sizeof(log_buffer), module_and_function_name, drwrap_get_drcontext(wrapcxt), wrapcxt, function_name, drwrap_get_func(wrapcxt));
 
-  retval_cache_set_return_value(module_and_function_name, strlen(module_and_function_name), drwrap_get_retval(wrapcxt));
+  retval_cache_set_return_value((unsigned int)tid, module_and_function_name, strlen(module_and_function_name), drwrap_get_retval(wrapcxt));
 
   //  dr_fprintf(outf, "Ret value of %s is 0x%"PRIx64"\n", module_name, drwrap_get_retval(wrapcxt));
 }
@@ -753,7 +755,7 @@ event_exit(void)
 
     /* Flush any remaining entries in the return value cache. */
     if (!op_no_retval.get_value())
-      retval_cache_output(1);
+      retval_cache_dump_all();
     
     if (outf != STDERR) {
         if (op_print_ret_addr.get_value())

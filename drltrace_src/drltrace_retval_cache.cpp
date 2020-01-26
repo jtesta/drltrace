@@ -28,8 +28,6 @@ bool grepable_output = false;
 
 static cached_function_call *retval_cache = NULL;
 
-static unsigned int free_index = 0;
-
 // TODO: document this.
 static unsigned int cache_size = 0;
 static unsigned int max_cache_size = 0;
@@ -40,53 +38,86 @@ static unsigned int cache_dump_triggered = 0;
  * (which may be zero).  If 'clear_all' is set, then all entries are outputted &
  * cleared. */
 void
-retval_cache_output(unsigned int clear_all) {
+retval_cache_output(unsigned int thread_id, bool clear_all) {
 
   /* If the caller wants to dump the cache, set this flag so that later return value
    * calls don't print error messages when the entry can't be found. */
+  int i = 0;
+  int first_slot = -1;
   if (clear_all)
     cache_dump_triggered = 1;
-  else if (!retval_cache[0].retval_set)
-    return;
+  else {
 
-  for (int i = 0; (i < free_index) && (i < RETVAL_CACHE_SIZE); i++) {
+    /* Find the first index matching this thread ID. */
+    for (; (i < cache_size); i++)
+      if (retval_cache[i].thread_id == thread_id) {
 
-    /* Print the function and return value. */
-    dr_fprintf(out_stream, "%s", retval_cache[i].function_call);
-    unsigned int retval_set = retval_cache[i].retval_set;
-    void *retval = retval_cache[i].retval;
+	/* If the first matching index doesn't have its return value set, there's
+         * nothing to do. */
+	if (!retval_cache[i].retval_set)
+	  return;
+	else
+	  break;
+      }
 
-    if (grepable_output) {
-      if (retval_set)
-	dr_fprintf(out_stream, " = 0x%"PRIx64"\n", retval);
-      else
-	dr_fprintf(out_stream, " = ?\n");
-    } else {
-      if (retval_set)
-	dr_fprintf(out_stream, "\n    ret: 0x%"PRIx64, retval);
-      else
-	dr_fprintf(out_stream, "\n    ret: ?");
-    }
-
-    free(retval_cache[i].function_call);
-    cache_size--;
+    /* If no matching thread ID was found, there's nothing to do. */
+    if (i == cache_size)
+      return;
   }
 
-  free_index = 0;
+  first_slot = i;
+  for (; (i < cache_size); i++) {
+    if ((thread_id == retval_cache[i].thread_id) || clear_all) {
+
+      /* Print the function and return value. */
+      dr_fprintf(out_stream, "%s", retval_cache[i].function_call);
+      unsigned int retval_set = retval_cache[i].retval_set;
+      void *retval = retval_cache[i].retval;
+
+      if (grepable_output) {
+	if (retval_set)
+	  dr_fprintf(out_stream, " = 0x%"PRIx64"\n", retval);
+	else
+	  dr_fprintf(out_stream, " = ?\n");
+      } else {
+	if (retval_set)
+	  dr_fprintf(out_stream, "\n    ret: 0x%"PRIx64, retval);
+	else
+	  dr_fprintf(out_stream, "\n    ret: ?");
+      }
+
+      free(retval_cache[i].function_call);
+    }
+  }
+
+  if (clear_all) {
+    cache_size = 0;
+  } else {
+    int free_slot = first_slot;
+
+    for (i = first_slot + 1; i < cache_size; i++) {
+      if (thread_id != retval_cache[i].thread_id) {
+	memcpy(&(retval_cache[free_slot]), &(retval_cache[i]), sizeof(cached_function_call));
+	free_slot++;
+      }
+    }
+
+    cache_size = free_slot;
+  }
+
   return;
 }
 
 
-// TODO: rename "function_call" to "func_full_name_and_args"
 void
-retval_cache_append(const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len) {
+retval_cache_append(unsigned int thread_id, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len) {
   /*dr_fprintf(outf, "%s", function_call);
     dr_fprintf(outf, "\n");*/
 
   /* If the cache size hits the user-defined limit, immediately dump it all as-is into
    * the log, then we'll continue. */
   if ((max_cache_size > 0) && (cache_size >= max_cache_size))
-    retval_cache_output(1);
+    retval_cache_dump_all();
 
   /* The post-function callback for these functions are never called.  So instead of
    * letting them clog up the cache, we'll just dump them out immediately. */
@@ -105,24 +136,24 @@ retval_cache_append(const char *module_and_function_name, size_t module_and_func
     return;
   }
 
-  retval_cache[free_index].function_call = strdup(function_call);
-  retval_cache[free_index].function_call_len = function_call_len;
-  retval_cache[free_index].retval_set = 0;
+  retval_cache[cache_size].thread_id = thread_id;
+  retval_cache[cache_size].function_call = strdup(function_call);
+  retval_cache[cache_size].function_call_len = function_call_len;
+  retval_cache[cache_size].retval_set = 0;
   cache_size++;
-  free_index++;
 
-  if (free_index == RETVAL_CACHE_SIZE)
-    retval_cache_output(1);
+  if (cache_size == RETVAL_CACHE_SIZE)
+    retval_cache_dump_all();
 }
 
 void
-retval_cache_set_return_value(const char *module_name_and_function, size_t module_name_and_function_len, void *retval) {
-  unsigned int found_entry = 0;
+retval_cache_set_return_value(unsigned int thread_id, const char *module_name_and_function, size_t module_name_and_function_len, void *retval) {
+  bool found_entry = false;
   unsigned int min_len;
-  int i = free_index - 1;
+  int i = cache_size - 1;
 
-  for (; (i >= 0) && (found_entry == 0); i--) {
-    if (retval_cache[i].retval_set)
+  for (; (i >= 0) && (found_entry == false); i--) {
+    if (retval_cache[i].retval_set || (retval_cache[i].thread_id != thread_id))
       continue;
 
     /* Only compare the shortest prefix of the two strings. */
@@ -132,15 +163,13 @@ retval_cache_set_return_value(const char *module_name_and_function, size_t modul
 
       retval_cache[i].retval = retval;
       retval_cache[i].retval_set = 1;
-      found_entry = 1;
+      found_entry = true;
     }
   }
 
-  if (found_entry && (i < 0)) {
-    /* If we just stored the return value of the first entry, then we can print out
-     * return values. */
-    retval_cache_output(0);
-  } else if (!found_entry)
+  if (found_entry)
+    retval_cache_output(thread_id, false);
+  else if (!found_entry && !cache_dump_triggered)
     dr_fprintf(out_stream, "ERROR: failed to find cache entry for %s (return value: 0x%" PRIx64 ")\n", module_name_and_function, retval);
 
   return;
@@ -162,17 +191,21 @@ retval_cache_init(file_t _out_stream, unsigned int _max_cache_size, \
   }
 }
 
-void
+bool
 retval_cache_free() {
+  bool ret = true;
+
   if (retval_cache == NULL)
-    return;
+    return false;
 
   if (cache_size != 0) {
+    ret = false;
     fprintf(stderr, "WARNING: freeing return value cache even though it is not " \
         "empty!: %u\n", cache_size);
   }
 
   free(retval_cache);  retval_cache = NULL;
+  return ret;
 }
 
 
@@ -180,7 +213,7 @@ retval_cache_free() {
 
 unsigned int
 is_cache_empty() {
-  if ((cache_size == 0) && (free_index == 0))
+  if (cache_size == 0)
     return 1;
   else
     return 0;
@@ -189,11 +222,6 @@ is_cache_empty() {
 unsigned int
 get_cache_size() {
   return cache_size;
-}
-
-unsigned int
-get_free_index() {
-  return free_index;
 }
 
 #endif

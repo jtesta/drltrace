@@ -1,0 +1,99 @@
+Test #1:
+
+x1 lol = 0x29a
+
+Success.
+
+
+Test #2:
+
+x1 lol = 0x1
+x2 lol = 0x2
+x3 lol = 0x3
+
+Success.
+
+
+Test #3:
+
+x1 lol = ?
+x2 lol = ?
+x3 lol = ?
+x4 lol = ?
+x5 lol = ?
+x6 lol = ?
+x7 lol = ?
+x8 lol = ?
+x1 lol = ?
+y2 lol = ?
+x3 lol = ?
+x4 lol = ?
+z5 lol = ?
+y6 lol = ?
+x7 lol = ?
+x8 lol = ?
+
+Success.
+
+
+Test #4:
+
+x1 lol = ?
+x2 lol = ?
+x3 lol = ?
+x4 lol = ?
+
+Success.
+
+
+Test #5:
+
+x1 lol = ?
+x2 lol = ?
+x3 lol = ?
+x4 lol = ?
+x5 lol = ?
+x6 lol = ?
+
+Success.
+
+
+Test #6:
+
+y1 lol = 0xb
+y2 lol = 0x16
+y3 lol = 0x21
+x1 lol = 0x1
+x2 lol = 0x2
+x3 lol = 0x3
+
+Success.
+
+
+Test #7:
+
+x1 t1 = 0x1
+x2 t1 = 0x2
+x3 t1 = 0x3
+x1 t2 = 0x4
+x2 t2 = 0x5
+x3 t2 = 0x6
+
+Success.
+
+
+Test #8:
+
+f4 t3 = 0x2710
+f5 t3 = 0x270f
+f1 t1 = 0x1
+f2 t1 = 0x2
+f3 t1 = 0x3
+f1 t2 = 0x29a
+f2 t2 = 0x29b
+f3 t2 = 0x29c
+f4 t2 = 0x29d
+
+Success.
+
+
