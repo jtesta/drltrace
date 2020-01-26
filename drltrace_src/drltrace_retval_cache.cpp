@@ -71,9 +71,61 @@ retval_cache_output(unsigned int thread_id, bool clear_all) {
 
       /* Print the function and return value. */
       dr_fprintf(out_stream, "%s", retval_cache[i].function_call);
+      dr_fprintf(out_stream, grepable_output ? " = " : "\n    ret: ");
       unsigned int retval_set = retval_cache[i].retval_set;
       void *retval = retval_cache[i].retval;
 
+      if (retval_set) {
+
+	switch (retval_cache[i].retval_type) {
+        /* Unfortunately, the type for VOID and VOID * are lumped together.  So we'll
+	 * just have to skip this case and let the default case print it in hex. */
+	/*
+        case DRSYS_TYPE_VOID:
+	  dr_fprintf(out_stream, "<void>\n");
+	  break;
+	*/
+	case DRSYS_TYPE_SIGNED_INT:
+	  dr_fprintf(out_stream, "%d\n", retval);
+	  break;
+	case DRSYS_TYPE_UNSIGNED_INT:
+	  dr_fprintf(out_stream, "%u\n", retval);
+	  break;
+	case DRSYS_TYPE_SIZE_T:
+#ifdef WINDOWS
+	  dr_fprintf(out_stream, "%Iu\n", (size_t)retval);
+#else
+	  dr_fprintf(out_stream, "%zu\n", (size_t)retval);
+#endif
+	  break;
+	case DRSYS_TYPE_CSTRING:
+	  if (retval == NULL)
+	    dr_fprintf(out_stream, "<NULL>\n");
+	  else
+	    dr_fprintf(out_stream, "0x%"PRIxPTR":\"%s\"\n", (uintptr_t)retval, (char *)retval);
+	  break;
+	case DRSYS_TYPE_CWSTRING:
+	  if (retval == NULL)
+	    dr_fprintf(out_stream, "<NULL>\n");
+	  else
+	    dr_fprintf(out_stream, "0x%"PRIxPTR":\"%S\"\n", (uintptr_t)retval, (char *)retval);
+	  break;
+	default: /* Print hex value. */
+	   /* Are we doing a 64-bit build? */
+	  /*
+#if _WIN64 || (__GNUC__ && (__WORDSIZE == 64))
+	  dr_fprintf(out_stream, "0x%"PRIx64"\n", retval);
+#else
+	  dr_fprintf(out_stream, "0x%"PRIx32"\n", retval);
+#endif
+	  */
+	  dr_fprintf(out_stream, "0x%"PRIxPTR"\n", (uintptr_t)retval);
+	  break;
+	}
+      } else
+	dr_fprintf(out_stream, grepable_output ? "?\n" : "?");
+
+	/*
       if (grepable_output) {
 	if (retval_set)
 	  dr_fprintf(out_stream, " = 0x%"PRIx64"\n", retval);
@@ -85,6 +137,7 @@ retval_cache_output(unsigned int thread_id, bool clear_all) {
 	else
 	  dr_fprintf(out_stream, "\n    ret: ?");
       }
+	*/
 
       free(retval_cache[i].function_call);
     }
@@ -110,7 +163,7 @@ retval_cache_output(unsigned int thread_id, bool clear_all) {
 
 
 void
-retval_cache_append(unsigned int thread_id, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len) {
+retval_cache_append(unsigned int thread_id, drsys_param_type_t retval_type, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len) {
   /*dr_fprintf(outf, "%s", function_call);
     dr_fprintf(outf, "\n");*/
 
@@ -139,6 +192,7 @@ retval_cache_append(unsigned int thread_id, const char *module_and_function_name
   retval_cache[cache_size].thread_id = thread_id;
   retval_cache[cache_size].function_call = strdup(function_call);
   retval_cache[cache_size].function_call_len = function_call_len;
+  retval_cache[cache_size].retval_type = retval_type;
   retval_cache[cache_size].retval_set = 0;
   cache_size++;
 

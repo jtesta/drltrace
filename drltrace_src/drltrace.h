@@ -30,6 +30,9 @@
  * DAMAGE.
  */
 
+#ifndef _DRLTRACE_H
+#define _DRLTRACE_H
+
 #include "dr_api.h"
 #include "drltrace_options.h"
 #include "drmgr.h"
@@ -195,3 +198,5 @@ typedef struct _drltrace_arg_t {
 void parse_config(void);
 std::vector<drltrace_arg_t *> *libcalls_search(const char *name);
 void libcalls_hashtable_delete();
+
+#endif /* _DRLTRACE_H */

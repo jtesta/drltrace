@@ -4,6 +4,13 @@
 #ifdef UNIT_TESTS
   #include <stdio.h>
   #define file_t FILE*
+  #define drsys_param_type_t unsigned int
+
+  #define DRSYS_TYPE_UNSIGNED_INT 1
+  #define DRSYS_TYPE_SIGNED_INT 2
+  #define DRSYS_TYPE_SIZE_T 3
+  #define DRSYS_TYPE_CSTRING 4
+  #define DRSYS_TYPE_CWSTRING 5
 
   #define MIN(x,y) (((x) > (y)) ? (y) : (x))
 
@@ -20,12 +27,14 @@
 
 #else
   #include "dr_api.h"
+  #include "drltrace.h"
 #endif
 
 struct _cached_function_call {
   unsigned int thread_id;    /* The thread ID that this call belongs to. */
   char *function_call; /* Contains the module name, function name, and arguments. */
   unsigned int function_call_len;  /* Length of the function_call string. */
+  drsys_param_type_t retval_type;  /* The type of return value. */
   unsigned int retval_set;   /* Set to 1 when retval is set, otherwise 0. */
   void *retval;              /* The return value of the function. */
 };
@@ -38,7 +47,7 @@ void
 retval_cache_output(unsigned int thread_id, bool clear_all);
 
 void
-retval_cache_append(unsigned int thread_id, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len);
+retval_cache_append(unsigned int thread_id, drsys_param_type_t retval_type, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len);
 
 void
 retval_cache_set_return_value(unsigned int thread_id, const char *function_call, size_t function_call_len, void *retval);

@@ -109,9 +109,9 @@ get_string(char *out, size_t out_size, void *drcontext, void *pointer_str, bool 
         DR_TRY_EXCEPT(drcontext, {
 	    char temp[256];
 	    if (is_wide)
-	      snprintf(temp, sizeof(temp) - 1, "\"%S\"", (wchar_t *)pointer_str);
+	      snprintf(temp, sizeof(temp) - 1, "0x%"PRIxPTR":\"%S\"", (uintptr_t)pointer_str, (wchar_t *)pointer_str);
 	    else
-	      snprintf(temp, sizeof(temp) - 1, "\"%s\"", (char *)pointer_str);
+	      snprintf(temp, sizeof(temp) - 1, "0x%"PRIxPTR":\"%s\"", (uintptr_t)pointer_str, (char *)pointer_str);
 
 	    strncat(out, temp, out_size - 1);
         }, {
@@ -195,8 +195,8 @@ get_args_unknown_call(char *out, size_t out_size, app_pc func, void *wrapcxt)
 {
     uint i;
     void *drcontext = drwrap_get_drcontext(wrapcxt);
-    char *prefix = "\n    arg ";
-    char *suffix = "";
+    const char *prefix = "\n    arg ";
+    const char *suffix = "";
     if (op_grepable.get_value()) {
       prefix = " {";
       suffix = "}";
@@ -219,21 +219,23 @@ get_args_unknown_call(char *out, size_t out_size, app_pc func, void *wrapcxt)
 }
 
 static bool
-get_libcall_args(char *out, size_t out_size, std::vector<drltrace_arg_t*> *args_vec, void *wrapcxt)
+get_libcall_args(char *out, size_t out_size, drsys_param_type_t *retval_type, std::vector<drltrace_arg_t*> *args_vec, void *wrapcxt)
 {
     if (args_vec == NULL || args_vec->size() <= 0)
         return false;
 
     std::vector<drltrace_arg_t*>::iterator it;
     for (it = args_vec->begin(); it != args_vec->end(); ++it) {
-        if (!drlib_iter_arg_cb(out, out_size, *it, wrapcxt))
-            break;
+      if (it == args_vec->begin())
+	*retval_type = (*it)->type;
+      else if (!drlib_iter_arg_cb(out, out_size, *it, wrapcxt))
+	break;
     }
     return true;
 }
 
 static void
-get_symbolic_args(char *out, size_t out_size, const char *name, void *wrapcxt, app_pc func)
+get_symbolic_args(char *out, size_t out_size, drsys_param_type_t *retval_type, const char *name, void *wrapcxt, app_pc func)
 {
     std::vector<drltrace_arg_t *> *args_vec;
 
@@ -243,7 +245,7 @@ get_symbolic_args(char *out, size_t out_size, const char *name, void *wrapcxt, a
 	if (op_use_config.get_value()) {
 		/* looking for libcall in libcalls hashtable */
 		args_vec = libcalls_search(name);
-		if (get_libcall_args(out, out_size, args_vec, wrapcxt)) {
+		if (get_libcall_args(out, out_size, retval_type, args_vec, wrapcxt)) {
 		  if (op_print_ret_addr.get_value()) {
 		    strncat(out, "\n   ", out_size - 1);
 		  }
@@ -295,9 +297,9 @@ get_thread_id_tag(char *out, size_t out_size, void *drcontext) {
 }
 
 inline void
-get_function_name_and_args(char *out, size_t out_size, char *module_and_function_name, \
-                           void *drcontext, void *wrapcxt, const char *function_name, \
-                           app_pc func) {
+get_function_name_and_args(char *out, size_t out_size, drsys_param_type_t *retval_arg, \
+                           char *module_and_function_name, void *drcontext, \
+                           void *wrapcxt, const char *function_name, app_pc func) {
   uint mod_id;
   app_pc mod_start, ret_addr;
   drcovlib_status_t res;
@@ -313,7 +315,7 @@ get_function_name_and_args(char *out, size_t out_size, char *module_and_function
    * to print.
    */
 
-  get_symbolic_args(out, out_size, function_name, wrapcxt, func);
+  get_symbolic_args(out, out_size, retval_arg, function_name, wrapcxt, func);
 
   if (op_print_ret_addr.get_value()) {
     ret_addr = drwrap_get_retaddr(wrapcxt);
@@ -426,15 +428,16 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 
     char log_buffer[1024];
     log_buffer[ sizeof(log_buffer) - 1 ] = '\0'; /* Ensure it remains null-terminated. */
-
-    get_function_name_and_args(log_buffer, sizeof(log_buffer), module_and_function_name, drcontext, wrapcxt, function_name, func);
+    drsys_param_type_t retval_arg = DRSYS_TYPE_UNKNOWN;
+    get_function_name_and_args(log_buffer, sizeof(log_buffer), &retval_arg, module_and_function_name, drcontext, wrapcxt, function_name, func);
 
     if (op_no_retval.get_value()) {
       dr_fprintf(outf, "%s", log_buffer);
       dr_fprintf(outf, "\n");
     } else {
       //dr_fprintf(outf, "CACHING: [%s]\n", log_buffer);
-      retval_cache_append((unsigned int)tid, module_and_function_name, module_and_function_name_len, log_buffer, strlen(log_buffer));
+
+      retval_cache_append((unsigned int)tid, retval_arg, module_and_function_name, module_and_function_name_len, log_buffer, strlen(log_buffer));
     }
 }
 
