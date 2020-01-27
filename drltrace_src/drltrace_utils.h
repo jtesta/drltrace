@@ -33,7 +33,12 @@
 #ifndef _DRLTRACE_UTILS_H
 #define _DRLTRACE_UTILS_H
 
+#ifdef WINDOWS
+#include <string.h>
+#else
 #include <strings.h>
+#endif
+
 #include "dr_api.h"
 
 /* XXX: some data types were taken from drsyscall.h and utils.h (DrMemory) */
