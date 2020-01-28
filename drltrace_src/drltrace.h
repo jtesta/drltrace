@@ -30,6 +30,9 @@
  * DAMAGE.
  */
 
+#ifndef _DRLTRACE_H
+#define _DRLTRACE_H
+
 #include "dr_api.h"
 #include "drltrace_options.h"
 #include "drmgr.h"
@@ -39,6 +42,13 @@
 #include "drltrace_utils.h"
 #include <string.h>
 #include <vector>
+
+
+/* Temporary workaround for VC2013, which doesn't have snprintf().
+ * apparently, this was added in later releases... */
+#ifdef WINDOWS
+#define snprintf _snprintf
+#endif
 
 typedef enum {
 	DRSYS_PARAM_IN = 0x01,  /**< Input parameter. */
@@ -188,3 +198,5 @@ typedef struct _drltrace_arg_t {
 void parse_config(void);
 std::vector<drltrace_arg_t *> *libcalls_search(const char *name);
 void libcalls_hashtable_delete();
+
+#endif /* _DRLTRACE_H */
