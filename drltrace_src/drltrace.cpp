@@ -257,6 +257,8 @@ get_symbolic_args(char *out, size_t out_size, drsys_param_type_t *retval_type, c
         get_args_unknown_call(out, out_size, func, wrapcxt);
 }
 
+/* Puts "module_name!function_name" into the module_and_function_name output buffer.
+ * Returns the number of characters written. */
 inline int
 get_module_and_function_name(char *module_and_function_name, \
                              size_t module_and_function_name_len, \
@@ -296,42 +298,6 @@ get_thread_id_tag(char *out, size_t out_size, void *drcontext) {
   }
 }
 
-inline void
-get_function_name_and_args(char *out, size_t out_size, drsys_param_type_t *retval_arg, \
-                           char *module_and_function_name, void *drcontext, \
-                           void *wrapcxt, const char *function_name, app_pc func) {
-  uint mod_id;
-  app_pc mod_start, ret_addr;
-  drcovlib_status_t res;
-
-
-  unsigned int thread_id_tag_len = get_thread_id_tag(out, out_size, drcontext);
-  strncat(out, module_and_function_name, out_size - 1);
-
-  /* XXX: We employ two schemes of arguments printing.  We are looking for prototypes
-   * in config file specified by user to get symbolic representation of arguments
-   * for known library calls. For the rest of library calls.  If there is no info
-   * we employ type-blindprinting and use -num_unknown_args to get a count of arguments
-   * to print.
-   */
-
-  get_symbolic_args(out, out_size, retval_arg, function_name, wrapcxt, func);
-
-  if (op_print_ret_addr.get_value()) {
-    ret_addr = drwrap_get_retaddr(wrapcxt);
-    res = drmodtrack_lookup(drcontext, ret_addr, &mod_id, &mod_start);
-    if (res == DRCOVLIB_SUCCESS) {
-      char temp[128];
-      snprintf(temp, sizeof(temp) - 1,
-          op_print_ret_addr.get_value() ?
-          " and return to module id:%d, offset:" PIFX : "",
-          mod_id, ret_addr - mod_start);
-
-      strncat(out, temp, out_size - 1);
-    }
-  }
-}
-
 /****************************************************************************
  * Library entry wrapping
  */
@@ -356,7 +322,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
       return;
     }
 #endif
-    
+
     const char *modname = NULL;
     app_pc func = drwrap_get_func(wrapcxt);
     void *drcontext = drwrap_get_drcontext(wrapcxt);
@@ -443,17 +409,48 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
     if (tested && !allowed)
       return;
 
-    char log_buffer[1024];
-    log_buffer[ sizeof(log_buffer) - 1 ] = '\0'; /* Ensure it remains null-terminated. */
+    char out[1024];
+    out[ sizeof(out) - 1 ] = '\0'; /* Ensure it remains null-terminated. */
+
+    unsigned int thread_id_tag_len = get_thread_id_tag(out, sizeof(out) - 1, drcontext);
+    strncat(out, module_and_function_name, sizeof(out) - 1);
+
+    /* XXX: We employ two schemes of arguments printing.  We are looking for prototypes
+     * in config file specified by user to get symbolic representation of arguments
+     * for known library calls. For the rest of library calls.  If there is no info
+     * we employ type-blindprinting and use -num_unknown_args to get a count of arguments
+     * to print.
+     */
     drsys_param_type_t retval_arg = DRSYS_TYPE_UNKNOWN;
-    get_function_name_and_args(log_buffer, sizeof(log_buffer), &retval_arg, module_and_function_name, drcontext, wrapcxt, function_name, func);
+    get_symbolic_args(out, sizeof(out) - 1, &retval_arg, function_name, wrapcxt, func);
 
+    uint mod_id;
+    app_pc mod_start, ret_addr;
+    drcovlib_status_t res;
+    if (op_print_ret_addr.get_value()) {
+      ret_addr = drwrap_get_retaddr(wrapcxt);
+      res = drmodtrack_lookup(drcontext, ret_addr, &mod_id, &mod_start);
+      if (res == DRCOVLIB_SUCCESS) {
+        char temp[128];
+        snprintf(temp, sizeof(temp) - 1,
+                 op_print_ret_addr.get_value() ?
+                 " and return to module id:%d, offset:" PIFX : "",
+                 mod_id, ret_addr - mod_start);
+
+        strncat(out, temp, sizeof(out) - 1);
+      }
+    }
+
+    /* If return value caching is disabled, just print the function out now. */
     if (op_no_retval.get_value()) {
-      dr_fprintf(outf, "%s", log_buffer);
+      dr_fprintf(outf, "%s", out);
       dr_fprintf(outf, "\n");
-    } else
-      retval_cache_append(drcontext, (unsigned int)tid, retval_arg, module_and_function_name, module_and_function_name_len, log_buffer, strlen(log_buffer));
 
+    /* Otherwise, cache this function call until the return value is obtained later. */
+    } else {
+      retval_cache_append(drcontext, (unsigned int)tid, retval_arg, \
+          module_and_function_name, module_and_function_name_len, out, strlen(out));
+    }
 }
 
 /****************************************************************************
@@ -480,6 +477,7 @@ lib_exit(void *wrapcxt, void *user_data)
       return;
     }
 #endif
+
   void *drcontext = drwrap_get_drcontext(wrapcxt);
   thread_id_t tid = dr_get_thread_id(drcontext);
 
@@ -489,14 +487,8 @@ lib_exit(void *wrapcxt, void *user_data)
 
   /*size_t module_and_function_name_len =*/ get_module_and_function_name(module_and_function_name + thread_id_tag_len, sizeof(module_and_function_name) - thread_id_tag_len, function_name, wrapcxt);
 
-  //char log_buffer[1024];
-  //log_buffer[ sizeof(log_buffer) - 1 ] = '\0'; /* Ensure it remains null-terminated. */
-
-  //get_function_name_and_args(log_buffer, sizeof(log_buffer), module_and_function_name, drwrap_get_drcontext(wrapcxt), wrapcxt, function_name, drwrap_get_func(wrapcxt));
-
+  /* Set the return value in the cache for this function call. */
   retval_cache_set_return_value(drcontext, (unsigned int)tid, module_and_function_name, strlen(module_and_function_name), drwrap_get_retval(wrapcxt));
-
-  //  dr_fprintf(outf, "Ret value of %s is 0x%"PRIx64"\n", module_name, drwrap_get_retval(wrapcxt));
 }
 
 static void
@@ -867,6 +859,7 @@ dr_client_main(client_id_t id, int argc, const char *argv[])
     open_log_file();
     parse_filter_file();
 
+    /* Initialize the return value cache system, unless it was disabled by the user. */
     if (!op_no_retval.get_value())
       retval_cache_init(outf, op_retval_max_cache.get_value(), op_grepable.get_value());
 }
