@@ -13,6 +13,7 @@
   #define DRSYS_TYPE_CWSTRING 5
 
   #define MIN(x,y) (((x) > (y)) ? (y) : (x))
+  #define DR_TRY_EXCEPT(_drcontext, _code, _altcode) #_code
 
   inline int fast_strcmp(const char *s1, size_t s1_len, const char *s2, size_t s2_len) {
   if (s1_len != s2_len)
