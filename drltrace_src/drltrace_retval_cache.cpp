@@ -38,7 +38,7 @@ static unsigned int cache_dump_triggered = 0;
  * (which may be zero).  If 'clear_all' is set, then all entries are outputted &
  * cleared. */
 void
-retval_cache_output(unsigned int thread_id, bool clear_all) {
+retval_cache_output(void *drcontext, unsigned int thread_id, bool clear_all) {
 
   /* If the caller wants to dump the cache, set this flag so that later return value
    * calls don't print error messages when the entry can't be found. */
@@ -92,60 +92,48 @@ retval_cache_output(unsigned int thread_id, bool clear_all) {
 	  dr_fprintf(out_stream, "%u\n", retval);
 	  break;
 	case DRSYS_TYPE_SIZE_T:
-#ifdef WINDOWS
-	  dr_fprintf(out_stream, "%Iu\n", (size_t)retval);
-#else
 	  dr_fprintf(out_stream, "%zu\n", (size_t)retval);
-#endif
 	  break;
 	case DRSYS_TYPE_CSTRING:
 	  if (retval == NULL)
 	    dr_fprintf(out_stream, "<NULL>\n");
-	  else
-	    dr_fprintf(out_stream, "0x%"PRIxPTR":\"%s\"\n", (uintptr_t)retval, (char *)retval);
+	  else if (drcontext == NULL)
+            dr_fprintf(out_stream, "0x%"PRIxPTR"\n", (uintptr_t)retval);
+          else {
+            DR_TRY_EXCEPT(drcontext, {
+              dr_fprintf(out_stream, "0x%"PRIxPTR":\"%s\"\n", (uintptr_t)retval, (char *)retval);
+            }, {
+              dr_fprintf(out_stream, "<invalid memory>");
+            });
+          }
 	  break;
 	case DRSYS_TYPE_CWSTRING:
 	  if (retval == NULL)
 	    dr_fprintf(out_stream, "<NULL>\n");
-	  else
-	    dr_fprintf(out_stream, "0x%"PRIxPTR":\"%S\"\n", (uintptr_t)retval, (char *)retval);
+	  else if (drcontext == NULL)
+            dr_fprintf(out_stream, "0x%"PRIxPTR"\n", (uintptr_t)retval);
+          else {
+            DR_TRY_EXCEPT(drcontext, {
+              dr_fprintf(out_stream, "0x%"PRIxPTR":\"%S\"\n", (uintptr_t)retval, (char *)retval);
+            }, {
+              dr_fprintf(out_stream, "<invalid memory>");
+            });
+          }
 	  break;
 	default: /* Print hex value. */
-	   /* Are we doing a 64-bit build? */
-	  /*
-#if _WIN64 || (__GNUC__ && (__WORDSIZE == 64))
-	  dr_fprintf(out_stream, "0x%"PRIx64"\n", retval);
-#else
-	  dr_fprintf(out_stream, "0x%"PRIx32"\n", retval);
-#endif
-	  */
 	  dr_fprintf(out_stream, "0x%"PRIxPTR"\n", (uintptr_t)retval);
 	  break;
 	}
       } else
 	dr_fprintf(out_stream, grepable_output ? "?\n" : "?");
 
-	/*
-      if (grepable_output) {
-	if (retval_set)
-	  dr_fprintf(out_stream, " = 0x%"PRIx64"\n", retval);
-	else
-	  dr_fprintf(out_stream, " = ?\n");
-      } else {
-	if (retval_set)
-	  dr_fprintf(out_stream, "\n    ret: 0x%"PRIx64, retval);
-	else
-	  dr_fprintf(out_stream, "\n    ret: ?");
-      }
-	*/
-
       free(retval_cache[i].function_call);
     }
   }
 
-  if (clear_all) {
+  if (clear_all)
     cache_size = 0;
-  } else {
+  else {
     int free_slot = first_slot;
 
     for (i = first_slot + 1; i < cache_size; i++) {
@@ -163,14 +151,14 @@ retval_cache_output(unsigned int thread_id, bool clear_all) {
 
 
 void
-retval_cache_append(unsigned int thread_id, drsys_param_type_t retval_type, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len) {
+retval_cache_append(void *drcontext, unsigned int thread_id, drsys_param_type_t retval_type, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len) {
   /*dr_fprintf(outf, "%s", function_call);
     dr_fprintf(outf, "\n");*/
 
   /* If the cache size hits the user-defined limit, immediately dump it all as-is into
    * the log, then we'll continue. */
   if ((max_cache_size > 0) && (cache_size >= max_cache_size))
-    retval_cache_dump_all();
+    retval_cache_dump_all(drcontext);
 
   /* The post-function callback for these functions are never called.  So instead of
    * letting them clog up the cache, we'll just dump them out immediately. */
@@ -197,11 +185,11 @@ retval_cache_append(unsigned int thread_id, drsys_param_type_t retval_type, cons
   cache_size++;
 
   if (cache_size == RETVAL_CACHE_SIZE)
-    retval_cache_dump_all();
+    retval_cache_dump_all(drcontext);
 }
 
 void
-retval_cache_set_return_value(unsigned int thread_id, const char *module_name_and_function, size_t module_name_and_function_len, void *retval) {
+retval_cache_set_return_value(void *drcontext, unsigned int thread_id, const char *module_name_and_function, size_t module_name_and_function_len, void *retval) {
   bool found_entry = false;
   unsigned int min_len;
   int i = cache_size - 1;
@@ -222,7 +210,7 @@ retval_cache_set_return_value(unsigned int thread_id, const char *module_name_an
   }
 
   if (found_entry)
-    retval_cache_output(thread_id, false);
+    retval_cache_output(drcontext, thread_id, false);
   else if (!found_entry && !cache_dump_triggered)
     dr_fprintf(out_stream, "ERROR: failed to find cache entry for %s (return value: 0x%" PRIx64 ")\n", module_name_and_function, retval);
 

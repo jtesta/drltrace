@@ -41,16 +41,16 @@ struct _cached_function_call {
 typedef struct _cached_function_call cached_function_call;
 
 
-#define retval_cache_dump_all() retval_cache_output(0, true)
+#define retval_cache_dump_all(__drcontext) retval_cache_output((__drcontext), 0, true)
 
 void
-retval_cache_output(unsigned int thread_id, bool clear_all);
+retval_cache_output(void *drcontext, unsigned int thread_id, bool clear_all);
 
 void
-retval_cache_append(unsigned int thread_id, drsys_param_type_t retval_type, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len);
+retval_cache_append(void *drcontext, unsigned int thread_id, drsys_param_type_t retval_type, const char *module_and_function_name, size_t module_and_function_name_len, const char *function_call, size_t function_call_len);
 
 void
-retval_cache_set_return_value(unsigned int thread_id, const char *function_call, size_t function_call_len, void *retval);
+retval_cache_set_return_value(void *drcontext, unsigned int thread_id, const char *function_call, size_t function_call_len, void *retval);
 
 void
 retval_cache_init(file_t _out_stream, unsigned int _max_cache_size, bool grepable_output);
