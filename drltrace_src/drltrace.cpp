@@ -414,13 +414,13 @@ iterate_exports(const module_data_t *info, bool add)
         if (func != NULL) {
             if (add) {
                 IF_DEBUG(bool ok =)
-                    drwrap_wrap_ex(func, lib_entry, NULL, (void *) sym->name, 0);
+                    drwrap_wrap_ex(func, lib_entry, lib_exit, (void *) sym->name, 0);
                 ASSERT(ok, "wrap request failed");
                 VNOTIFY(2, "wrapping export %s!%s @" PFX NL,
                        dr_module_preferred_name(info), sym->name, func);
             } else {
                 IF_DEBUG(bool ok =)
-                    drwrap_unwrap(func, lib_entry, NULL);
+                    drwrap_unwrap(func, lib_entry, lib_exit);
                 ASSERT(ok, "unwrap request failed");
             }
         }
