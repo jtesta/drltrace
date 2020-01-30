@@ -382,7 +382,11 @@ lib_exit(void *wrapcxt, void *user_data)
   const char *function_name = (const char *)user_data;
   void *drcontext = drwrap_get_drcontext(wrapcxt);
 
-  dr_fprintf(outf, "Return value for %s (thread ID %u): %p\n", function_name, dr_get_thread_id(drcontext), drwrap_get_retval(wrapcxt));
+  DR_TRY_EXCEPT(drcontext, {
+    dr_fprintf(outf, "Return value for %s (thread ID %u): %p\n", function_name, dr_get_thread_id(drcontext), drwrap_get_retval(wrapcxt));
+  }, {
+    dr_fprintf(outf, "Exception thrown when processing thread ID/return value for function %s\n", function_name););
+  });
 }
 
 static void
