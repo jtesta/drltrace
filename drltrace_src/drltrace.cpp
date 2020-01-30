@@ -377,6 +377,15 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 }
 
 static void
+lib_exit(void *wrapcxt, void *user_data)
+{
+  const char *function_name = (const char *)user_data;
+  void *drcontext = drwrap_get_drcontext(wrapcxt);
+
+  dr_fprintf(outf, "Return value for %s (thread ID %u): %p\n", function_name, dr_get_thread_id(drcontext), drwrap_get_retval(wrapcxt));
+}
+
+static void
 iterate_exports(const module_data_t *info, bool add)
 {
     dr_symbol_export_iterator_t *exp_iter =
