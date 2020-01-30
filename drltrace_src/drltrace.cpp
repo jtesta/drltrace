@@ -385,7 +385,7 @@ lib_exit(void *wrapcxt, void *user_data)
   DR_TRY_EXCEPT(drcontext, {
     dr_fprintf(outf, "Return value for %s (thread ID %u): %p\n", function_name, dr_get_thread_id(drcontext), drwrap_get_retval(wrapcxt));
   }, {
-    dr_fprintf(outf, "Exception thrown when processing thread ID/return value for function %s\n", function_name););
+    dr_fprintf(outf, "Exception thrown when processing thread ID/return value for function %s\n", function_name);
   });
 }
 
