@@ -267,7 +267,7 @@ retval_cache_set_return_value(void *drcontext, \
   /* If the entry was not found, print an error.  However, if the cache was dumped
    * previously, this might be a valid call to an entry that was cleared. */
   else if (!found_entry && !cache_dump_triggered)
-    dr_fprintf(out_stream, "ERROR: failed to find cache entry for %s (return value: 0x%" PRIx64 ")\n", module_name_and_function, retval);
+    dr_fprintf(out_stream, "ERROR: failed to find cache entry for [%s] (return value: 0x%" PRIx64 ")\n", module_name_and_function, retval);
 
   return;
 }

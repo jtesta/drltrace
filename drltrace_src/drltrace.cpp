@@ -287,12 +287,13 @@ get_module_and_function_name(char *module_and_function_name, \
 /* Places the thread ID tag into the buffer, then returns its length. */
 inline unsigned int
 get_thread_id_tag(char *out, size_t out_size, void *drcontext) {
-  thread_id_t tid;
-  tid = dr_get_thread_id(drcontext);
+  thread_id_t tid = INVALID_THREAD_ID;
+  if (drcontext != NULL)
+    tid = dr_get_thread_id(drcontext);
   if (tid != INVALID_THREAD_ID)
     return (unsigned int)snprintf(out, out_size - 1, "~~%d~~ ", tid);
   else {
-    strncat(out, "~~Dr.L~~ ", out_size - 1);
+    strncpy(out, "~~Dr.L~~ ", out_size - 1);
     return 9;
   }
 }
@@ -306,20 +307,7 @@ lib_entry(void *wrapcxt, INOUT void **user_data)
 {
     const char *function_name = (const char *) *user_data;
 
-#ifdef WINDOWS
-    /* DynamoRIO seems to crash on Windows when calling dr_get_thread_id() or
-     * drwrap_get_retval() on these functions.  DR_TRY_EXCEPT() doesn't seem to
-     * help... */
-    size_t function_name_len = strlen(function_name);
-    if ((fast_strcmp(function_name, function_name_len, \
-                     "ZwCallbackReturn", 16) == 0) || \
-        (fast_strcmp(function_name, function_name_len, \
-                     "KiUserCallbackDispatcher", 24) == 0) || \
-        (fast_strcmp(function_name, function_name_len, \
-                     "ExpInterlockedPopEntrySListResume", 33) == 0)) {
-      return;
-    }
-#endif
+    skip_unstable_functions(function_name);
 
     const char *modname = NULL;
     app_pc func = drwrap_get_func(wrapcxt);
@@ -462,34 +450,27 @@ static void
 lib_exit(void *wrapcxt, void *user_data)
 {
   const char *function_name = (const char *)user_data;
+  void *drcontext = NULL;
+  unsigned int tid = 0;
+  void *retval = NULL;
 
-#ifdef WINDOWS
-    /* DynamoRIO seems to crash on Windows when calling dr_get_thread_id() or
-     * drwrap_get_retval() on these functions.  DR_TRY_EXCEPT() doesn't seem to
-     * help... */
-    size_t function_name_len = strlen(function_name);
-    if ((fast_strcmp(function_name, function_name_len, \
-                     "ZwCallbackReturn", 16) == 0) || \
-        (fast_strcmp(function_name, function_name_len, \
-                     "KiUserCallbackDispatcher", 24) == 0) || \
-        (fast_strcmp(function_name, function_name_len, \
-                     "ExpInterlockedPopEntrySListResume", 33) == 0)) {
-      dr_fprintf(outf, "Skipping %s.\n", function_name);
-      return;
-    }
-#endif
+  skip_unstable_functions(function_name);
 
-  void *drcontext = drwrap_get_drcontext(wrapcxt);
-  thread_id_t tid = dr_get_thread_id(drcontext);
+  if (wrapcxt != NULL) {
+    drcontext = drwrap_get_drcontext(wrapcxt);
+	retval = drwrap_get_retval(wrapcxt);
+	if (drcontext != NULL)
+	  tid = (unsigned int)dr_get_thread_id(drcontext);
+  }
 
   char module_and_function_name[256];
 
-  unsigned int thread_id_tag_len = get_thread_id_tag(module_and_function_name, sizeof(module_and_function_name), drwrap_get_drcontext(wrapcxt));
+  unsigned int thread_id_tag_len = get_thread_id_tag(module_and_function_name, sizeof(module_and_function_name), drcontext);
 
   /*size_t module_and_function_name_len =*/ get_module_and_function_name(module_and_function_name + thread_id_tag_len, sizeof(module_and_function_name) - thread_id_tag_len, function_name, wrapcxt);
 
   /* Set the return value in the cache for this function call. */
-  retval_cache_set_return_value(drcontext, (unsigned int)tid, module_and_function_name, strlen(module_and_function_name), drwrap_get_retval(wrapcxt));
+  retval_cache_set_return_value(drcontext, tid, module_and_function_name, strlen(module_and_function_name), retval);
 }
 
 static void

@@ -50,6 +50,23 @@
 #define snprintf _snprintf
 #endif
 
+/* Some function on Windows aren't stable to process (i.e.: we can't
+ * reliably or safely get the thread ID and/or the return value). */
+#ifdef WINDOWS
+#define skip_unstable_functions(_function_name) \
+    { size_t function_name_len = strlen(_function_name); \
+    if ((fast_strcmp(_function_name, function_name_len, \
+                     "ZwCallbackReturn", 16) == 0) || \
+        (fast_strcmp(_function_name, function_name_len, \
+                     "KiUserCallbackDispatcher", 24) == 0) || \
+        (fast_strcmp(_function_name, function_name_len, \
+                     "ExpInterlockedPopEntrySListResume", 33) == 0)) { \
+      return; \
+    }}
+#else
+#define skip_unstable_functions() {}
+#endif
+
 typedef enum {
 	DRSYS_PARAM_IN = 0x01,  /**< Input parameter. */
 	DRSYS_PARAM_OUT = 0x02,  /**< Output parameter. */
@@ -193,7 +210,6 @@ typedef struct _drltrace_arg_t {
 	*/
 	uint64 value64;
 } drltrace_arg_t;
-
 
 void parse_config(void);
 std::vector<drltrace_arg_t *> *libcalls_search(const char *name);
