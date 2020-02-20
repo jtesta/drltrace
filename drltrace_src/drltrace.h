@@ -60,7 +60,14 @@
         (fast_strcmp(_function_name, function_name_len, \
                      "KiUserCallbackDispatcher", 24) == 0) || \
         (fast_strcmp(_function_name, function_name_len, \
-                     "ExpInterlockedPopEntrySListResume", 33) == 0)) { \
+                     "ExpInterlockedPopEntrySListResume", 33) == 0) || \
+        (fast_strcmp(_function_name, function_name_len, \
+                     "_dll_crt0", 9) == 0) || \
+        (fast_strcmp(_function_name, function_name_len, \
+                     "BaseThreadInitThunk", 19) == 0) || \
+        (fast_strcmp(_function_name, function_name_len, \
+                     "RtlUserThreadStart", 18) == 0) \
+    ) { \
       return; \
     }}
 #else
