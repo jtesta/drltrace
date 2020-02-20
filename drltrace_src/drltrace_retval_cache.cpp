@@ -75,7 +75,7 @@ retval_cache_output(void *drcontext, unsigned int thread_id, bool clear_all) {
 
   /* If the caller wants to dump the cache, set this flag so that later return value
    * calls don't print error messages when the entry can't be found. */
-  int i = 0;
+  unsigned int i = 0;
   int first_slot = -1;
   if (clear_all)
     cache_dump_triggered = 1;
@@ -132,10 +132,10 @@ retval_cache_output(void *drcontext, unsigned int thread_id, bool clear_all) {
           if (retval == NULL)
             dr_fprintf(out_stream, "<NULL>\n");
           else if (drcontext == NULL)
-            dr_fprintf(out_stream, "0x%"PRIxPTR"\n", (uintptr_t)retval);
+            dr_fprintf(out_stream, "0x%" PRIxPTR "\n", (uintptr_t)retval);
           else {
             DR_TRY_EXCEPT(drcontext, {
-              dr_fprintf(out_stream, "0x%"PRIxPTR":\"%s\"\n", \
+              dr_fprintf(out_stream, "0x%" PRIxPTR ":\"%s\"\n", \
                          (uintptr_t)retval, (char *)retval);
             }, {
               dr_fprintf(out_stream, "<invalid memory>");
@@ -146,10 +146,10 @@ retval_cache_output(void *drcontext, unsigned int thread_id, bool clear_all) {
           if (retval == NULL)
             dr_fprintf(out_stream, "<NULL>\n");
           else if (drcontext == NULL)
-            dr_fprintf(out_stream, "0x%"PRIxPTR"\n", (uintptr_t)retval);
+            dr_fprintf(out_stream, "0x%" PRIxPTR "\n", (uintptr_t)retval);
           else {
             DR_TRY_EXCEPT(drcontext, {
-              dr_fprintf(out_stream, "0x%"PRIxPTR":\"%S\"\n", \
+              dr_fprintf(out_stream, "0x%" PRIxPTR ":\"%S\"\n", \
                          (uintptr_t)retval, (char *)retval);
             }, {
               dr_fprintf(out_stream, "<invalid memory>");
@@ -157,7 +157,7 @@ retval_cache_output(void *drcontext, unsigned int thread_id, bool clear_all) {
           }
           break;
         default: /* Print hex value. */
-          dr_fprintf(out_stream, "0x%"PRIxPTR"\n", (uintptr_t)retval);
+          dr_fprintf(out_stream, "0x%" PRIxPTR "\n", (uintptr_t)retval);
           break;
         }
       } else
